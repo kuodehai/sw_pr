@@ -1,0 +1,4 @@
+1)当前目录包含  Interfaces公共接口部分      Utils公共工具部分    Compement公共功能组件
+2)CMakeLists.txt将此目录下公共部分源码编译成Common库,将此目录下的Interfaces/include/Common目录拷贝到对应调用库的编译环境中，设置包含Common目录
+3）此目录下其他各个目录下的各test测试部分另外编译 ，可调用编译成Common库，包含接口头文件
+
