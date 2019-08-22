@@ -1,0 +1,165 @@
+
+/**
+ * @author wangdaopo
+ * @email 3168270295@qq.com
+ */
+///////////////////////
+0忽略哪些目录和文件
+3.4撤销
+5.用于把一个分支的修改合并到当前分支
+(1) 显示提交内容
+(2) 查看日志   (3) 比较变更   (5)  修改之前提交  (6) 标签
+(7) 查看包含某个commit的最早版本   (8)把一个分支的所有更新应用到另一个分支 (9) 把某个分支的一个提交应用到另一个分支上
+6. git 生成patch和使用patch
+/////////////////////////////////
+
+
+
+git config --global user.name "Your Name"git config --global user.email "youremail@domain.com"
+git init
+0、现在已经创建好了一个 git 版本库，但是它是空的，还不能做任何事情，下一步就是怎么向版本库中添加文件了。如果希望忽略某些文件，需要在git库根目录下添加. gitignore文件。
+编辑.gitignore，可以指定要忽略哪些目录和文件，这些文件就对Git隐形了。
+比如指定忽略proj下的patches目录：
+/patches
+
+3、撤销未add的修改：git checkout
+4、撤销未commit的修改：git reset和git checkout
+此时应该采取的步骤是：先使用reset命令取消添加，再使用checkout命令将修改的内容进行撤销。
+命令git checkout -- filename意思就是，把filename这个文件在工作区的修改全部撤销。
+
+5. git rebase用于把一个分支的修改合并到当前分支。
+5.1假设你现在基于远程分支"origin"，创建一个叫"mywork"的分支。
+$ git checkout -b mywork origin
+假设远程分支"origin"已经有了2个提交
+现在我们在mywork这个分支做一些修改，然后生成两个提交(commit)
+但是与此同时，有些人也在"origin"分支上做了一些修改并且做了提交了. 这就意味着"origin"和"mywork"这两个分支各自"前进"了，它们之间"分叉"了。
+
+5.2
+所以，在不用-f的前提下，想维持树的整洁，方法就是：在git push之前，先git fetch，再git rebase。
+git fetch origin master
+
+$ git checkout mywork
+$ git rebase origin        // git rebase origin/master
+这些命令会把你的"mywork"分支里的每个提交(commit)取消掉，并且把它们临时 保存为补丁(patch)(这些补丁放到".git/rebase"目录中),然后把"mywork"分支更新 为最新的"origin"分支，最后把保存的这些补丁应用到"mywork"分支上。
+
+
+5.3解决冲突
+在rebase的过程中，也许会出现冲突(conflict). 在这种情况，Git会停止rebase并会让你去解决 冲突；在解决完冲突后，用"git-add"命令去更新这些内容的索引(index), 然后，你无需执行 git-commit,只要执行:
+$ git rebase --continue
+这样git会继续应用(apply)余下的补丁。
+
+5.4. git push
+
+
+
+
+在任何时候，你可以用--abort参数来终止rebase的行动，并且"mywork" 分支会回到rebase开始前的状态。
+$ git rebase –abort
+
+(1) 显示提交内容
+# git show 9b1796 //查看提交的具体内容
+# git show -s 9b1796 //显示提交的概要
+# git ls-tree 9b1796 //查看commit指向的tree包含的tree和blob
+# git cat-file -p 9b1796 //查看提交的基本信息
+
+(2) 查看日志
+日志是版本控制中非常重要的一部分，它描述了你的所有操作。
+# git log // 显示提交日志
+# git log -p // 显示日志，并显示提交内容
+# git log file // 只显示有修改file的commit
+# git log --stat // 显示统计信息
+# git log --graph // 用ASCII字符画图显示提交历史线，这个功能很不错
+来看一个实际的例子，如果要查看 Git 仓库中，2008 年 10 月期间，Junio Hamano 提交的但未合并的测试脚本（位于项目的 t/ 目录下的文件），可以用下面的查询命令：
+$ git log --pretty="%h - %s" --author=gitster --since="2008-10-01" \
+--before="2008-11-01" --no-merges -- t/
+
+
+ 
+(3) 比较变更
+我们经常要查看对工作目录的内容作了哪些修改，以确定这些修改是否合理。
+# git diff --cached // 查看将要提交的内容，这时候的比较的是：暂存区 vs HEAD
+# git diff // 当前你所做的，但是没有提交到暂存区的修改，也就是这时候比较：前工作目录 vs HEAD
+# git diff file // 比较单个文件
+# git diff commit1:path/file commit2:path/file // 比较不同提交中的同一个文件
+# git diff --stat // 查看统计信息
+(4) 合并分支
+分支一般用于开发新feature，当开发完成后就要合并到主分支了。
+# git diff new master // 从new到master所做的变化
+# git diff master new // 从master到new所做的变化
+# git diff new // 等价于git diff new master
+# git merge new // 实际上是把git diff master new添加到master中
+合并分支的提交会带有merge信息(指明合并了哪两个分支)，SVN上则无此功能！
+
+
+(5)  修改之前提交
+可以修改以前的提交，并且修改后在以后的版本中也有效，Git世界里是有后悔药的。
+# git rebase 7daa17^ --interactive // 退回到要修改的7daa17的前一个提交
+执行后，git会调用vi显示7daa17到最新提交的记录，把我们要修改的7daa17的pick改成edit。
+进行修改后：
+# git add <file>
+# git commit --amend // 修改这个commit
+# git rebase --continue // 提交修改后的commit并且返回到原来的head处
+取消修改操作：
+# git rebase --abort
+
+ 
+(6) 标签
+git中有两种主要的标签：轻量级标签(lightweight)和带注释的标签(annotated)。
+轻量级标签是针对某个特定提交的指针，带注释的标签是git仓库中的对象，包含更多信息。
+轻量级标签：
+# git tag v1.0 // 把最新commit做成v1.0标签
+带注释的标签：
+# git tag -a v1.0 -m "describe what is v1.0" // 也可以不指定-m，直接用vi编辑
+显示标签列表：
+# git tag -l
+删除标签：
+# git tag -d v1.0
+显示某个标签的内容：
+# git show v1.0
+ 
+(7) 查看包含某个commit的最早版本
+查看包含某个提交的最早版本。
+# git describe --contains <commit id>
+
+
+(8)把一个分支的所有更新应用到另一个分支
+假如有两个分支A和B，它们在提交m处分叉了。
+现在B更新到了n，要把B分支从m到n的提交也应用到A，这就是使用场景。
+# git rebase master branch
+相当于：
+# git checkout branch
+# git rebase master
+这样一来，branch就包含了master的后续更新了。
+
+
+(9) 把某个分支的一个提交应用到另一个分支上
+git rebase可以应用其它分支的所有后续提交，但如果我们只想要其中的某一个提交呢？
+git cherry-pick可用于把某个分支的一个commit应用到另一个分支。
+假设master分支上有个commit，现在想把它应用到branch分支。
+git checkout branch
+git cherry-pick <commit id>
+
+
+6. git 生成patch和使用patch
+http://blog.csdn.net/maybe_windleave/article/details/8703778
+ 工作中用到的补丁大致可以分为两种，一种是patch文件，即补丁文件拿过来利用某些命令将这个补丁打入当前代码中，另外一种是修改前和修改后的文件对比包，这个对比包可以让我们快速查看到修改点的同时看到修改的上下文。
+如果涉及到跨公司跨地域的交流，patch，一般可以分为两种 git diff  git format-patch
+git diff 和git format-patch生成的patch一个重要不同之处，实际使用中会发现git diff一次只会生成一个patch文件，不管差别了多少个提交，都是一个；而git format-patch是根据提交的节点来的，一个节点一个patch。
+
+
+一种是UNIX下的patch，可以使用git diff或者其他UNIX的diff命令生成（本人只用过git diff命令，后面的看书有提到过但是自己木有用过），一种是git 工具生成的patch，也可以说是git专用的patch，使用git format-patch命令生成。
+6.1先来看看git diff生成patch的过程。一般常用命令如下：
+        git diff  > patch
+        git diff  --cached > patch
+        git diff  branchname --cached > patch
+这个时候当前目录下就会有一个patch文件，这是一个非git环境也可以使用的patch。对于这种patch，在git上使用要用git apply命令，如下：
+        git apply patch
+可以先用git apply --check 查看
+补丁是否能够干净顺利地应用到当前分支中：git apply --check patch，如果执行完该命令之后没有任何输出，表示我们可以顺利采纳该补丁，接下来就是git上的提交了。
+
+6.2  在接着说说git format-patch生成的补丁，这是git专用的，也是日常工作中最常接触到的补丁类型。常用命令如下：
+        1)两个节点之间的提交： git format-patch  节点A   节点B
+        2)单个节点： git format-patch -1 节点A （-n就表示要生成几个节点的提交）
+        3)最近一次提交节点的patch ：git format-patch HEAD^ 依次类推……
+使用git format-patch命令生成的patch文件，包含了提交的附加信息：比如作者，时间等。再次基础上使用git am命令即可将此补丁应用到当前分支。注意应用完之后，你会发现当前分支多了一次提交记录，并且有完整的信息，而不是简单的修改文件。
+
