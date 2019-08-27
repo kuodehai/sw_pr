@@ -1,0 +1,360 @@
+@author wangdaopo
+@email 3168270295@qq.com */
+简介
+
+CMake是一个比make更高级的编译配置工具，它可以根据不同平台、不同的编译器，生成相应的Makefile或者vcproj项目。
+
+通过编写CMakeLists.txt，可以控制生成的Makefile，从而控制编译过程。CMake自动生成的Makefile不仅可以通过make命令构建项目生成目标文件，还支持安装（make install）、测试安装的程序是否能正确执行（make test，或者ctest）、生成当前平台的安装包（make package）、生成源码包（make package_source）、产生Dashboard显示数据并上传等高级功能，只要在CMakeLists.txt中简单配置，就可以完成很多复杂的功能，包括写测试用例。
+
+如果有嵌套目录，子目录下可以有自己的CMakeLists.txt。
+
+
+
+【实例】通过cmake tutorial学习CMake配置方法
+
+http://www.cmake.org/cmake/help/cmake_tutorial.html
+
+可以在源代码的Tests/Turorial目录中找到这个手册对应的代码。
+
+Test1到test7
+
+Step1的配置可能不够完全，比如无法运行make install，无法运行make test，但可以参考。）
+
+Step2把子目录编译为库，并且链接到最终的可执行文件。
+
+Step3支持make install把程序安装到系统指定目录，并且运行一些测试检查它是否能够正常工作。
+
+Step4检查系统是否支持log和exp函数。（log和exp都是数学运算函数）
+
+Step4的完整配置、生成Makefile、编译、运行、安装、测试过程，参见最前面的“CMake使用步骤”。
+
+Step5动态生成源文件，自动把源文件编译进系统中。
+
+Step6生成各种平台Windows/Ubuntu/etc.上的安装包，包括二进制安装包和源码安装包。
+
+可以把依赖的系统库也打包。include (InstallRequiredSystemLibraries)
+
+使用CPack。
+
+由于Step1-7，后面一步的配置都包含了前面一步的配置，所以从Step5开始，就会遇到make的问题。
+
+为了编译通过，可以修改MathFunctions目录下的CMakeLists.txt和mysqrt.cxx，去掉所有对Table.h 的依赖。
+
+运行make package可以生成安装包
+
+Step7把结果发布到dashboard。
+下面网址是一个公开的dashboard：
+
+
+
+cmake 基本命令 & 交叉编译配置 & 模块的编写
+
+http://blog.csdn.net/gw569453350game/article/details/46683845
+
+
+
+怎样编写Cmake的配置文件Cmakelist.txt
+
+https://jingyan.baidu.com/article/fea4511a1c984ef7bb912592.html
+
+
+
+cmake使用示例与整理总结
+
+http://blog.csdn.net/wzzfeitian/article/details/40963457
+
+
+
+
+
+#项目名 ,这一行自动引入两个变量 HELLO_BINARY_DIR-二进制生成目录 和 HELLO_SOURCE_DIR-源码目录
+
+PROJECT(HELLO)
+
+
+
+#例如输出两个变量值,message用于输出变量值
+
+message("HELLO_BINARY_DIR=" ${HELLO_BINARY_DIR})
+
+message("HELLO_SOURCE_DIR=" ${HELLO_SOURCE_DIR})
+
+
+
+#输出CMake过程详细信息,不是必须的
+
+SET(CMAKE_VERBOSE_MAKEFILE on)
+
+
+
+#设置cmake在linux下工作
+
+SET(CMAKE_SYSTEM_NAME Linux)
+
+
+
+#设置C语言所用编译器为arm-none-linux-gnueabi-gcc
+
+SET(CMAKE_C_COMPILER   arm-none-linux-gnueabi-gcc)
+
+
+
+#设置C++语言所用编译器为arm-none-linux-gnueabi-g++
+
+SET(CMAKE_CXX_COMPILER   arm-none-linux-gnueabi-g++)
+
+
+
+#还可以设置编译器参数,例如-g 打开调试 -O2 优化等级
+
+set(CMAKE_C_FLAGS "-g -O2 ")
+
+
+
+#定义编译器查找头文件和库文件目录
+
+SET(CMAKE_FIND_ROOT_PATH "/home/share/glib/arm-2010q1/arm-none-linux-gnueabi/libc")
+
+
+
+#表示不在主机目录里面搜索头文件和库文件
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+
+
+
+#只在CMAKE_FIND_ROOT_PATH定义的目录中搜索lib库和头文件
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+
+
+message("CMAKE_FIND_ROOT_PATH=" ${CMAKE_FIND_ROOT_PATH})
+
+
+
+
+
+#搜索PkgConfig库,搜索到才能使用pkg_check_modules命令
+
+FIND_PACKAGE(PkgConfig)
+
+
+
+#PKG_CONFIG_FOUND 为true说明找到该模块,可以使用pkg_check_modules命令
+
+IF(PKG_CONFIG_FOUND)
+
+message("use pkg_check_modules")
+
+ELSE()
+
+#打印错误并终止cmake
+
+message(FATAL_ERROR "no pkg_check_modules")
+
+ENDIF(PKG_CONFIG_FOUND)
+
+
+
+pkg_check_modules(GLIB glib-2.0)
+
+#pkg_check_modules函数执行成功,自动设置下面几个变量
+
+message("GLIB_INCLUDE_DIRS=" ${GLIB_INCLUDE_DIRS})
+
+message("GLIB_LIBRARY_DIRS=" ${GLIB_LIBRARY_DIRS})
+
+message("GLIB_LIBRARIES=" ${GLIB_LIBRARIES})
+
+
+
+#添加头文件搜索目录
+
+include_directories(${GLIB_INCLUDE_DIRS})
+
+
+
+#添加库文件搜索目录
+
+link_directories(${GLIB_LIBRARY_DIRS})
+
+
+
+#保存库名,多个可以写一起
+
+SET(LIBS ${GLIB_LIBRARIES})
+
+
+
+#申明和设置一个变量
+
+set(SRC_LIST main.c)
+
+message(${SRC_LIST})
+
+
+
+#告诉工程生成一个可执行文件
+
+add_executable(hello ${SRC_LIST})
+
+
+
+target_link_libraries(hello ${LIBS})
+
+
+
+
+
+
+
+Cmake的介绍和使用 Cmake实践 hello
+
+
+
+http://www.cppblog.com/Roger/archive/2011/11/17/160368.html
+
+
+
+【实例】cmake 学习笔记
+
+http://blog.csdn.net/dbzhang800/article/details/6314073
+
+
+
+来不学习一下cmake是不行了，一点一点来吧，找个最简单的C程序，慢慢复杂化，试试看：
+
+例子一
+单个源文件 main.c
+例子二
+==>分解成多个 main.c hello.h hello.c
+例子三
+==>先生成一个静态库，链接该库
+例子四
+==>将源文件放置到不同的目录
+例子五
+==>控制生成的程序和库所在的目录
+例子六
+==>使用动态库而不是静态库
+
+
+
+
+
+
+Linux下编写CMakeLists.txt使用cmake产生makefile
+
+Cmake 设置交叉编译环境
+
+http://www.linuxidc.com/Linux/2014-03/98622.htm
+
+
+
+构建交叉编译的CMakeLists.txt
+
+说明：
+
+设置交叉编译之前，必须在CMakeList.txt前面加上这样一句，这样CMake才会认为你是要交叉编译：
+
+SET(CMAKE_SYSTEM_NAME Linux)
+
+
+
+在通知CMake要交叉编译以后，还要告诉CMake到哪个路径下去找库文件，因为在交叉编译的时候CMake是不会自动去系统默认的目录找库文件和头文件的：
+
+
+
+SET(CMAKE_FIND_ROOT_PATH "根目录路径")
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+　　其中的第一行，是告诉CMake查找的根目录是什么。后面分别是告诉CMake怎么查找编译时候的工具程序的位置、库的位置和头文件的位置。设置为NEVER表示不查找，设置为ONLY表示只在CMAKE_FIND_ROOT_PATH设定的目录下查找，设置为BOTH（这是默认选项）表示既可以在系统目录下查找，也可以在CMAKE_FIND_ROOT_PATH下查找。因为咱们是交叉编译，所以后两项的设置了ONLY，对于编译时调用工具，一般来说是需要在系统目录下查找的，不过我不需要所以设置为NEVER。
+
+　　然后，设置编译器：
+
+
+
+SET(CMAKE_C_COMPILER "编译器环境路径")
+
+　　直接把编译器的路径设置过去就可以了，CMAKE_C_COMPILER是C语言编译器，CMAKE_CXX_COMPILE是C++语言编译器。
+
+
+
+所以 在工程主CMakeLists.txt 中首先加入如下：
+
+SET(CMAKE_SYSTEM_NAME Linux) 
+SET(TOOLCHAIN_DIR "/opt/mv_pro_4.0/montavista/pro/devkit/arm/v5t_le")
+SET(CMAKE_FIND_ROOT_PATH ${TOOLCHAIN_DIR})
+SET(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+SET(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+SET(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+SET(CMAKE_C_COMPILER ${TOOLCHAIN_DIR}/bin/arm_v5t_le-gcc)
+SET(CMAKE_CXX_COMPILER ${TOOLCHAIN_DIR}/bin/arm_v5t_le-g++)
+
+
+
+
+
+生成可调试版本的程序
+
+1使用CMAKE编译确实很方便。但CMAKE默认编译出来的程序不带有符号文件，用GDB无法调试。
+
+2 要编译时产生符号文件供调试，调用CMAKE时，带上 -DCMAKE_BUILD_TYPE=Debug
+
+例如：在build文件中输入：                                                                         
+
+cmake .. -DCMAKE_BUILD_TYPE=Debug
+
+这样产生的makefile文件make生成的可执行文件就带有调试信息，供gdb和gdbserver使用了。
+
+*****另外有另一种更好的方法是在工程主CMakeLists.txt中的PROJECT语句后加入一句
+
+SET(CMAKE_BUILD_TYPE Debug)
+
+CMake 中有一个变量 CMAKE_BUILD_TYPE ,可以的取值是 Debug Release RelWithDebInfo 和 MinSizeRel。当这个变量值为 Debug 的时候,CMake 会使用变量 CMAKE_CXX_FLAGS_DEBUG 和 CMAKE_C_FLAGS_DEBUG 中的字符串作为编译选项生成 Makefile ,当这个变量值为 Release 的时候,工程会使用变量 CMAKE_CXX_FLAGS_RELEASE 和 CMAKE_C_FLAGS_RELEASE 选项生成 Makefile。
+
+CMake 需要重点记住的命令和量
+
+一  MESSAGE 命令
+
+MESSAGE(STATUS "THIS IS A BINARY DIR" ${HELLO_BINARY_DIR})
+
+STATUS 表示将要输出前缀为“--”的信息，可以替换为
+
+FATAL_ERROR:立即终止CMake过程
+
+SEND_ERROR:产生错误，生成过程被跳过
+
+二 IF 与ELSEIF 、ELSE、ENDIF
+
+示例：
+
+IF(表达式)
+
+ELSEIF(表达式)
+
+ELSE(表达式)
+
+ENDIF
+
+
+
+
+
+在 linux 下使用 CMake 构建应用程序
+
+https://www.ibm.com/developerworks/cn/linux/l-cn-cmake/
+
+CMake 提供了比 autoconfig 更简洁的语法。在 linux 平台下使用 CMake 生成 Makefile 并编译的流程如下:
+
+编写 CmakeLists.txt。
+执行命令“cmake PATH”或者“ccmake PATH”生成 Makefile ( PATH 是CMakeLists.txt 所在的目录 )。
+使用 make 命令进行编译。

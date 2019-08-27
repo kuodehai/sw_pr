@@ -47,3 +47,25 @@ Web服务器
 https://wiki.ubuntu.org.cn/index.php?title=%E6%BA%90%E5%88%97%E8%A1%A8&redirect=no
 速配指南	热门设置	软件推荐	源列表	疑难杂症
 
+
+
+ubuntu14.04中samba怎么安装不上..
+
+1. 養成習慣 安裝任何新套件以前
+先
+sudo apt-get update
+sudo apt-get upgrade
+再開始安裝該套件
+2. 如果還有同樣的訊息
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get dist-upgrade
+再開始安裝該套件
+3. 如果還有同樣的訊息
+更換下載伺服器
+4. 如果還有同樣的訊息
+關閉 網路 proxy server
+
+update：当执行apt-get update时，update重点更新的是来自软件源的软件包的索引记录（即index files）。
+upgrade：当执行apt-get upgrade时，upgrade是根据update更新的索引记录来下载并更新软件包。
+dist-upgrade:当执行apt-get dist-upgrade时，除了拥有upgrade的全部功能外，dist-upgrade会比upgrade更智能地处理需要更新的软件包的依赖关系。
