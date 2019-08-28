@@ -1,0 +1,16 @@
+ {
+    "deviceInfo":{
+        // Unique device serial number. e.g. 123456
+        "deviceSerialNumber":"123456",
+        // The Client ID of the Product from developer.amazon.com
+        "clientId":"201806242134",
+        // Product ID from developer.amazon.com
+        "productId":"my_Device"
+    },
+    "sampleApp":{
+        "endpoint": "https://avs-alexa-na.amazon.com"
+    }
+
+ }
+
+

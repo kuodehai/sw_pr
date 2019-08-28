@@ -1,0 +1,2 @@
+https://git.openwrt.org/
+拷贝已有Makefile注意空格命令前缩进TAB间隔，否则有时会出现即使拷贝正确内容，但编译指令没有缩进TAB缩进，报错
