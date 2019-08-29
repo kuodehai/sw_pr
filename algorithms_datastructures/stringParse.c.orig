@@ -78,113 +78,113 @@ int atoD(char *str, int k)
 
 int writeRegFromeFile(int fd)/////获取文件的指针  c语言的split字符串分割函数strtok的使用 实例
 {
-
-    /*
-    定义函数：char * strtok(char *s, const char *delim);
-    函数说明：strtok()用来将字符串分割成一个个片段。参数s 指向欲分割的字符串，参数delim 则为分割字符串，当strtok()在参数s 的字符串中发现到参数delim 的分割字符时则会将该字符改为\0 字符。在第一次调用时，strtok()必需给予参数s 字符串，往后的调用则将参数s 设置成NULL。每次调用成功则返回下一个分割后的字符串指针。
-    返回值：返回下一个分割后的字符串指针，如果已无从分割则返回NULL。
-     */
-    /*ad9631.txt文件内容如下
-    	    {0b1,0x000,0x00},
-    		{0b1,0x3df,0x01},// Required for proper operation
-    		{0b1,0x2a6,0x0e},// Enable Master Bias
-    		{0b1,0x2a8,0x0e},// Set Bandgap Trim
-    		{0b1,0x292,0x08},// Set DCXO Coarse Tune[5:0].  Coarse and Fine nominal values used with eval system.  Other nominal values may be needed in a customer system
-    		{0b1,0x293,0x80},// Set DCXO Fine Tune [12:5]
-    		{0b1,0x294,0x00},// Set DCXO Fine Tune [4:0]
-    */
+	
+/*	
+定义函数：char * strtok(char *s, const char *delim);
+函数说明：strtok()用来将字符串分割成一个个片段。参数s 指向欲分割的字符串，参数delim 则为分割字符串，当strtok()在参数s 的字符串中发现到参数delim 的分割字符时则会将该字符改为\0 字符。在第一次调用时，strtok()必需给予参数s 字符串，往后的调用则将参数s 设置成NULL。每次调用成功则返回下一个分割后的字符串指针。
+返回值：返回下一个分割后的字符串指针，如果已无从分割则返回NULL。
+ */
+	/*ad9631.txt文件内容如下
+		    {0b1,0x000,0x00},
+			{0b1,0x3df,0x01},// Required for proper operation
+			{0b1,0x2a6,0x0e},// Enable Master Bias
+			{0b1,0x2a8,0x0e},// Set Bandgap Trim
+			{0b1,0x292,0x08},// Set DCXO Coarse Tune[5:0].  Coarse and Fine nominal values used with eval system.  Other nominal values may be needed in a customer system
+			{0b1,0x293,0x80},// Set DCXO Fine Tune [12:5]
+			{0b1,0x294,0x00},// Set DCXO Fine Tune [4:0]
+	*/
 #if DEBUG
-    printf("line:%d,func:%s\n",__LINE__,__FUNCTION__);
+	printf("line:%d,func:%s\n",__LINE__,__FUNCTION__);
 #endif
-    FILE *pFile=fopen("ad9631.txt","r"); //获取文件的指针
-    if(NULL == pFile)
-        perror("File open err!\n");
+	FILE *pFile=fopen("ad9631.txt","r"); //获取文件的指针
+	if(NULL == pFile)
+	  perror("File open err!\n");
+  
+	//char *pBuf;  //定义文件指针
+	//fseek(pFile,0,SEEK_END); //把指针移动到文件的结尾 ，获取文件长度
+	//int len=ftell(pFile); //获取文件长度
+	//pBuf=new char[len+1]; //定义数组长度
+	//rewind(pFile); //把指针移动到文件开头 因为我们一开始把指针移动到结尾，如果不移动回来 会出错
+	//fread(pBuf,1,len,pFile); //读文件
+	//pBuf[len]=0; //把读到的文件最后一位 写为0 要不然系统会一直寻找到0后才结束
+	//MessageBox(pBuf);  //显示读到的数据
 
-    //char *pBuf;  //定义文件指针
-    //fseek(pFile,0,SEEK_END); //把指针移动到文件的结尾 ，获取文件长度
-    //int len=ftell(pFile); //获取文件长度
-    //pBuf=new char[len+1]; //定义数组长度
-    //rewind(pFile); //把指针移动到文件开头 因为我们一开始把指针移动到结尾，如果不移动回来 会出错
-    //fread(pBuf,1,len,pFile); //读文件
-    //pBuf[len]=0; //把读到的文件最后一位 写为0 要不然系统会一直寻找到0后才结束
-    //MessageBox(pBuf);  //显示读到的数据
-
-    //在c语言环境下实现  C++中的getline函数    即在c语言中按行读取
-    char * send_msg = NULL;
-    size_t len = 0;
-    size_t read;
-    int count=0;
+	//在c语言环境下实现  C++中的getline函数    即在c语言中按行读取
+	char * send_msg = NULL;
+	size_t len = 0;
+   	size_t read;
+	int count=0;
 #if DEBUG
-    printf("line:%d,func:%s\n",__LINE__,__FUNCTION__);
+	printf("line:%d,func:%s\n",__LINE__,__FUNCTION__);
 #endif
-    while ((read = getline(&send_msg, &len, pFile)) != -1)
-    {
-        //	printf("%s\n",send_msg);
-        //	count++;
-        //	printf("共计  %d \n ",count);
-        //用逗号做分隔符，读出内容
-        //	char s[] = "123-sldkf-123ls-343434-dfjdlkfj-dflcmvn";
-        char *delim = ",";
-        char *p,*tmp;
-        uint32_t tx[3];
-        int i = 0;
-        uint32_t count;
-        uint8_t r_data;
-
-        if(strstr(send_msg,"{") == NULL) {
-            continue;//如果不包含左大括号"{"，则认为不是数组，跳出循环读下一行。
-        }
-
-
-
-        p = strtok(send_msg, delim);
-        i=0;
-#if DEBUG
-        printf("%s", p);
-#endif
-
-        tmp = strstr(p,"0b") + 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，0b后才是数字
-        tx[i] = atoi(tmp);
-#if DEBUG
-        printf("(0x%x) ", tx[i]);
-#endif
-        i++;
-
-
-
-        while((p = strtok(NULL, delim))) {
-#if DEBUG
-            printf("%s", p);
-#endif
-            if(i == 1) {
-                tmp = strstr(p,"0x") + 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，第二个数0x后才是数字
-                tx[i] = atoD(tmp,16);   /*int atoD(char a[],int d1)  将d1进制的num,转换为十进制数s*/
-#if DEBUG
-                printf("(0x%x) ", tx[i]);
-#endif
-            }
-            if(i == 2) {
-                tmp = strstr(p,"}") - 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，第三个数}前两个字节才是数字
-                tx[i] = atoD(tmp,16);
-#if DEBUG
-                printf("(0x%x)\n", tx[i]);
-#endif
-            }
-            i++;
-            if(i>=3) break;
-        }
-#if DEBUG
-        printf("\n");
+	while ((read = getline(&send_msg, &len, pFile)) != -1)
+	{
+		//	printf("%s\n",send_msg);
+		//	count++;
+		//	printf("共计  %d \n ",count);
+		//用逗号做分隔符，读出内容
+		//	char s[] = "123-sldkf-123ls-343434-dfjdlkfj-dflcmvn";
+		char *delim = ",";
+		char *p,*tmp;
+		uint32_t tx[3];
+		int i = 0;
+		uint32_t count;
+		uint8_t r_data;
+		
+		if(strstr(send_msg,"{") == NULL){
+			continue;//如果不包含左大括号"{"，则认为不是数组，跳出循环读下一行。
+		}
+		
+		
+		
+		p = strtok(send_msg, delim);
+		i=0;
+#if DEBUG			
+		printf("%s", p);
 #endif
 
-        send_msg = NULL;
-        if(read == -1)
-            break;
-    }
+		tmp = strstr(p,"0b") + 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，0b后才是数字
+		tx[i] = atoi(tmp);
+#if DEBUG		
+		printf("(0x%x) ", tx[i]);
+#endif
+		i++;
+		
+		
+	
+		while((p = strtok(NULL, delim))){
+		#if DEBUG		
+			printf("%s", p);
+		#endif
+			if(i == 1){		
+				tmp = strstr(p,"0x") + 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，第二个数0x后才是数字
+				tx[i] = atoD(tmp,16);   /*int atoD(char a[],int d1)  将d1进制的num,转换为十进制数s*/
+		#if DEBUG			
+				printf("(0x%x) ", tx[i]);
+		#endif
+				}
+			if(i == 2){		
+				tmp = strstr(p,"}") - 2;//ad9631.txt原始数据格式:{0b1,0x000,0x00}，第三个数}前两个字节才是数字
+				tx[i] = atoD(tmp,16);
+		#if DEBUG	
+				printf("(0x%x)\n", tx[i]);
+		#endif
+				}
+			i++;
+			if(i>=3) break;
+		}
+#if DEBUG	
+		printf("\n");
+#endif
 
-
-    fclose(pFile); // 关闭文件
-    return 0;
+	send_msg = NULL;
+    if(read == -1)
+	   break;
+	}
+	
+	
+	fclose(pFile); // 关闭文件
+	return 0;
 }
 
 
