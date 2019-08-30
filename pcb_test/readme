@@ -1,0 +1,18 @@
+获取USB线的拔插状态:echo_uevent_detect.c uevent  获取USB线的拔插状态，和PC连接上返回1，否则返回0   //创建NETLINK socket，用于监听内核发送过来的uevent消息
+录音、放音测试:echo_audio_test.c  echo_audio_play_test.c  echo_audio_record_test.c  audio_test.h
+扫描到的WiFi信息 验证AP模式是否正常:    echo_wlan_test.c wlan_test.h  wpa_supplicant
+蓝牙测试:echo_bt_test.c
+CPU 频率测试:echo_cpu_test.c
+DDR测试； echo_ddr_test.c
+emmc测试：echo_emmc_test.c
+vendor storage，用于存储SN, MAC, LAN,BT等数据，主要特性是不会丢失以及系统启动各个阶段都可以访问，包括uboot, kernel, linux用户空间以及pc端。rk_vendor_storage
+写存储测试： write_storage.c
+UID IP MAC 获取： echo_discovery.c
+按键测试：echo_key_test.c
+LED测试：echo_led_test.c
+旋转rotary测试：echo_rotary_test.c
+RTC实时时钟 系统时间测试 echo_rtc_test.c
+测试服务端：echo_pcbatest_server.c 
+开源纯c实现json解析和封装 ：cJSON
+alsa pcm操作：tinyalsa
+
