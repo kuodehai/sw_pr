@@ -1,0 +1,140 @@
+1、获取创建插件的模板gst-template
+http://hi.baidu.com/zhxust/blog/item/8161ab637d89ac6a0d33fa45.html
+
+方法一： CVS
+$cvs -d:pserver:anoncvs@cvs.freedesktop.org/cvs/gstreamer login
+password: ［root的密码］
+$cvs -z3 -d:pserver:anoncvs@cvs.freedesktop.org:/cvs/gstreamer co gst-template
+
+方法二： GIT
+如果没有安装git，则首先安装git:
+$sudo apt-get install git-core
+再获取模板： 
+          
+$git clone git://anongit.freedesktop.org/gstreamer/gst-template.git
+
+
+2、进入目录gst-template/gst-plugin/src
+$cd gst-template/gst-plugin/src
+$../tools/make_element ExampleFilter
+
+产生文件
+gstexamplefilter.c gstexamplefilter.h
+
+3、修改Makefile.am文件 （注意：是src目录下的Makefile.am）
+$sudo gedit Makefile.am
+
+plugin_LTLIBRARIES = libgstexamplefilter.la
+
+libgstexamplefilter_la_SOURCES = gstexamplefilter.c
+
+libgstexamplefilter_la_CFLAGS = $(GST_CFLAGS)
+libgstexamplefilter_la_LIBADD = $(GST_LIBS)
+libgstexamplefilter_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
+libgstexamplefilter_la_LIBTOOLFLAGS = --tag=disable-static
+
+noinst_HEADERS = gstexamplefilter.h
+
+总共有七行
+
+
+4、导入PKG_CONFIG_PATH环境变量，在命令行输入：
+
+$export PKG_CONFIG_PATH=/usr/lib/pkgconfig
+
+
+5、进入目录gst-template/gst-plugin,修改文件autogen.sh
+进入上一层目录
+$cd.. 
+编辑autogen.sh文件：
+$sudo gedit autogen.sh
+
+如果是通过CVS获取的模板，则修改原来的
+srcfile=src/main.c
+为新的：
+srcfile=src/gstexamplefilter.c
+
+如果是通过GIT获取的模板，则在autogen.sh的开始添加：
+srcfile=src/gstexamplefilter.c
+
+6、运行autogen.sh,产生Makefile文件
+
+$./autogen.sh
+
+7、开始安装：
+$./configure
+$make
+$sudo make install
+
+再进入src子目录中
+$cd src
+
+用ls -a查询会有.libs目录产生
+（注意： .libs 为隐藏目录）
+进入.libs
+$cd .libs
+$ls -a
+会发现里面产生了
+
+libgstexamplefilter.la
+libgstexamplefilter.so
+
+8、将插件加入到gstreamer库中
+把libgstexamplefilter.la
+libgstexamplefilter.so
+这两个文件拷贝到系统目录中： /usr/lib/gstreamer-0.10
+
+$sudo cp libgstexamplefilter.la /usr/lib/gstreamer-0.10/libgstexamplefilter.la
+$sudo cp libgstexamplefilter.so /usr/lib/gstreamer-0.10/libgstexamplefilter.so
+
+
+
+This git module contains template code for possible GStreamer projects.
+
+gst-app
+	basic autotools layout for writing a GStreamer-based application.
+
+gst-plugin
+	basic autotools layout and basic filter code for writing a
+	GStreamer plug-in.
+
+This code is provided under a MIT license [1], which basically means "do
+with it as you wish, but don't blame us if it doesn't work". You can use
+this code for any project as you wish, under any license as you wish. We
+recommend the use of the LGPL [2] license for applications and plugins,
+given the minefield of patents the multimedia is nowadays. See our website
+for details [3].
+
+Build each module like this:
+
+    cd gst-plugin
+    ./autogen.sh
+    make
+
+Modify gst-plugin/src/Makefile.am to add or remove source files to build or
+add additional dependencies or compiler flags or change the name of the
+plugin file to be installed. Run ./autoregen.sh if changes don't take effect
+automatically on 'make'.
+
+Modify gst-plugin/configure.ac to check for additional library dependencies
+or other features needed by your plugin. Run ./autoregen.sh if changes don't
+take effect automatically on 'make'.
+
+Once the plugin is built you can either install it with 'sudo make install'
+(however, this will by default go into the /usr/local prefix where it won't
+be picked up by a GStreamer installed from packages, so you would need to
+set the GST_PLUGIN_PATH environment variable to include or point to
+/usr/local/lib/gstreamer-1.0/ for your plugin to be found by a from-package
+GStreamer). Alternatively, you will find your plugin binary in
+gst-plugins/src/.libs/ as libgstplugin.so or similar (the extension may vary),
+so you can also set the GST_PLUGIN_PATH environmen variable to the
+gst-plugins/src/.libs/ directory (best to specify an absolute path though).
+
+You can also check if it has been built correctly with:
+
+    gst-inspect-1.0 gst-plugins/src/.libs/libgstplugin.so
+
+
+[1] http://www.opensource.org/licenses/mit-license.php or COPYING.MIT
+[2] http://www.opensource.org/licenses/lgpl-license.php or COPYING.LIB
+[3] http://gstreamer.freedesktop.org/documentation/licensing.html
