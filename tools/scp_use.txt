@@ -1,0 +1,21 @@
+Linxu之间如何互相传送文件？
+
+1.scp命令的简介和优点：
+（1） scp是（secure copy）的简写，用于在Linux下进行远程拷贝文件的命令，和它类似的命令有cp，
+2.从linux本机文件上传到另一台linux
+格式：
+scp 要传的文件 root@目标ip:路径
+scp –r 要传的目录 root@目标ip:路径
+例子：
+[root@lpc ~]# scp /root/1.txt root@192.168.3.1:/root //上传文件 
+[root@lpc ~]# scp -r /root/data root@192.168.3.1:/root //上传目录
+ 
+3.从linux下载文件到linux本机：
+格式：
+scp root@192.168.3.1:/root/data /root
+scp命令 用户名@目标IP地址：文件路径 本地位置
+例子：
+[root@lpc ~]# scp root@192.168.3.1:/root/1.txt /root //下载文件
+[root@lpc ~]# scp -r root@192.192.3.1:/root/data /root //下载目录
+注意：Linux的IP，以及需要复制，上传和下载的目录需根据自己的实际情况来定！！！
+
