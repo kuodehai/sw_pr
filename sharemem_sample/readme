@@ -1,0 +1,283 @@
+综合：当读写磁盘文件的数据较小(少于1MB)时候，使用内存文件映射和普通IO是差异很小的，所以建议使用普通IO就可以了；当很多文件的大小在几十MB, 几百MB, 或者1GB以上的文件数据需要进行较频繁的访问，或者一开始需要全部加载这些大文件的时候，那么就需要考虑使用内存文件映射了。
+
+mmap实现大文件复制https://blog.csdn.net/imxiangzi/article/details/81013999
+
+//C++采用内存映射方式高效率读写大数据 https://blog.csdn.net/oceanperfect/article/details/52192602
+
+大文件内存映射问题https://blog.csdn.net/nk_wang/article/details/51514404
+c++
+关于大文件分解的一个问题，文件大小不确定，几百M到几个G，对于这样的问题，采用内存映射处理是最为高效的手段
+需求是这样的，文件包含文件头：136个字节，后面记录的是一条一条的数据包，数据包结构如下：数据包头：4个字节；文件序号：4个字节，数据包大小；要求分解为100M大小左右的文件，根据文件结构代码实现如下
+
+
+
+读一个几十G的文件, 怎么才能一段一段的读
+void *mmap(void *start, size_t length, int prot, int flags,int fd, off_t offset);
+这个函数的第2个参数就是申请内存的大小，你用个50M不行？尤其32位系统下，好像有点危险。。
+
+int len = 52428800;   //50M数据
+int offset = 0;       //偏移量
+fd=open(name, flag, mode); 
+if(fd<0) 
+... 
+ptr=mmap(NULL, len , PROT_READ|PROT_WRITE, MAP_SHARED , fd , offset);
+offset +=len; //重新设置偏移量，以便下次读取数据
+  
+//处理这段数据
+....
+munmap( ptr, len );//解除映射关系
+msync ( ptr , len, MS_SYNC);//更新文件
+
+
+下面这个程序，通过read和mmap两种方法分别对硬盘上一个名为“mmap_test”的文件进行操作，文件中存有10000个整数，程序两次使用不同的方法将它们读出，加1，再写回硬盘。通过对比可以看出，read消耗的时间将近是mmap的两到三倍。
+https://blog.csdn.net/T146lLa128XX0x/article/details/88686879
+
+
+
+
+
+
+
+############################linux mmap碰到总线错误 bus error原因#########################################
+使用mmap在openwrt上出现的Bus error，在Ubuntu14.04一切正常，应该是内核配置的问题.用ldd命令查看可执行程序依赖的.so
+
+是保持共享区域，直到通信完毕为止，这样，数据内容一直保存在共享内存中，并没有写回文件。共享内存中的内容往往是在解除映射时才写回文件的。因此，采用共享内存的通信方式效率是非常高的。  
+
+Linux mmap碰到总线错误 bus error原因
+记得我在Linux mmap及bus error解决方案提到bus error的解决方案，后来有人问我为什么，当时也不是特别了解，
+现在知道了：我们不能用mmap去扩展一个空的新打开的文件，因为文件大小为0，并没有合法的物理页与之对应。
+Bus error解决方案
+     mmap过后，在进行内存拷贝时，先使用write()函数向已经打开的文件描述符中写东西。
+	 
+	 
+ 新创建的那个文件的大小是多少stat filename,如果lseek之后没有发生i/o操作时，lseek只是把偏移量给改了一下
+并没有在磁盘上分配存储区,而你的文件是新建的 存储的空间长度为0 lseek之后还是为0,把mmap到系统的线性地址空间，然后进行复制的话就会出错.
+所以建议LZ在lseek之后进行一个I/O操作，这样就会把lseek跳过的长度给你分配磁盘存储区的
+
+总结： 
+问题总算找到了，就是我企图在一个奇数地址起始的地方强制类型转换得到一个short值。 
+在Intel系列处理器上，可以在任一奇数内存地址储存任何变量或数组，不会导致任何致命的错误影响，只是效率可能会降低。但在DaVinci上，这一点不行。所以必须对大于一个字节的数据类型小心谨慎，比较安全的方法是使用内存拷贝函数memcpy()，或者使用下面的代替方法：
+对于我刚刚的那个出现Bus error的程序，假设指针ptr刚好是指向了byte3(地址是0x0)，然后想进行short强制类型转换，使用byte3,byte4来构成一个short类型的值，由于第一次总线的数据只有byte0，byte1，byte2，byte3，取不到byte4，这在DaVinci板子上，就是一个Bus error了，因为没有达到边界对齐。如果ptr指的是byte2(地址0x02)，就没有问题了。因为0x02地址值是sizeof(short)的整数倍。
+
+
+错误：Bus error (core dumped)。
+
+错误理由是：创建的文件的size为0，所以出上面的错误。新创建一个文件后，马上把文件大小扩展一下就不会发生错误了。
+
+int fd = open("mem", O_RDWR|O_CREAT, 0666);
+ftruncate(fd, 8);//把新创建的文件mem的大小扩展为8.
+############################linux mmap碰到总线错误 bus error原因#########################################
+
+
+
+性能频繁波动，经常出现平响飙升的情况,解决方案：
+经过排查发现平响飙升的原因是由于系统mmap内存映的内存空间被回收(page reclaim)到磁盘导致。
+使用mmap映射时指定MAP_LOCKED参数：指定此参数后mmap()函数会调用mlock()将内存区域锁定，防止被换出到磁盘，但是如果不是root账号只能锁定RLIMIT_MEMLOCK大小的内存(x86_64下默认为64K)，需要调大此参数或修改为ulimited
+
+
+
+
+
+
+##########################mmap失败的原因##########################，
+其中一种，可能是由于fopen的文件是只读，但是在mmap中却写成了PROT_READ | PROT_WRITE（读写）
+那么只需要删除PROT_WRITE即可
+
+分析了mmap会错的原因，
+1)一个是open文件时的模式与mmap时使用的模式不匹配(这个也是网上比较常见的错误)；
+2)另一个是说因为linux不能保证对网络上的文件的一致性，所以mmap对这样的文件进行操作时会出现问题，该文作者在virtual box下实验了用mmap操作网络上的文件就出现了invalid argument，这样的话和我遇到的问题基本就是一样了，接下来把文件该为本地文件，全部通过!! 
+3)mmap失败原因分析：若第二个参数length或者其大小不是页面大小的整数倍时会导致映射失败。
+##########################mmap失败的原因##########################，
+
+
+
+/////////////////////////实例///////////////////
+int pagesiz
+/* 取得page size */  
+pagesize = sysconf(_SC_PAGESIZE);  
+printf("pagesize is %d\n",pagesize);  
+
+
+ char *mapped
+struct stat sb;  
+/* 获取文件的属性 */  
+if ((fstat(fd, &sb)) == -1) {  
+perror("fstat");  
+}  
+    /* 将文件映射至进程的地址空间 */  
+    if ((mapped = (char *)mmap(NULL, sb.st_size, PROT_READ |   
+                    PROT_WRITE, MAP_SHARED, fd, 0)) == (void *)-1) {  
+        perror("mmap");  
+    }  
+
+返回值：
+
+若映射成功则返回映射区的内存起始地址，否则返回MAP_FAILED(－1)，错误原因存于errno 中。
+
+错误代码：
+
+EBADF 参数fd 不是有效的文件描述词
+EACCES 存取权限有误。如果是MAP_PRIVATE 情况下文件必须可读，使用MAP_SHARED则要有PROT_WRITE以及该文件要能写入。
+EINVAL 参数start、length 或offset有一个不合法。
+EAGAIN 文件被锁住，或是有太多内存被锁住。
+ENOMEM 内存不足。
+系统调用mmap()用于共享内存的两种方式：
+
+
+
+MMAP 就是这么一个功能，它把一个文件（也就是在内存中的物理地址空间确定）映射到不同进程的地址空间中。
+
+一、写
+
+     值得注意的是由于MMAP需要内存中的物理地址空间，因此在写操作过程中需要将文件加载到内存中才能进行操作，因此在打开文件后需要进行写操作，引起缺页异常，将文件映射到内存中。
+	fd = open(argv[1],O_CREAT|O_RDWR|O_TRUNC,00777);
+	assert(fd !=-1);
+	lseek(fd, 4, SEEK_SET);//这里size最好为共享的结构体的大小，将整个需要的大小都加载到内存中
+	write(fd,"",1); // 如果不进行写空操作便直接进行mmap映射，便会造成段错误，因为实际的fd对应的物理内存不存在。
+	p_mmap = (int *) mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, fd , 0); //将文件映射到内核
+	if(p_mmap == MAP_FAILED)//p为映射区首地址
+	{
+		perror("MAP failed");
+		exit(1);
+	}
+	//write(fd," ",1); //write something
+	
+	close(fd);
+	*（p_mmap) =1; //共享映射区写入数据
+
+
+二、读
+
+	读进程必须在写进程之后调用mmap，否者会出现段错误，和前面一样的道理。
+
+	读进程流程
+	int fd
+	fd= open(argv[1], O_CREAT |O_RDWR, 0077);
+	assert(fd !=-1);
+	p_mmap = (int *) mmap (NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);//共享映射（MAP_SHARED） 
+	if(p_mmap == MAP_FAILED)
+	{
+		perror("MAP failed");
+		exit(1);
+	}
+	printf("data: %d \n", (*(p_mmap)));
+////////////////////////////////////////////
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//C++采用内存映射方式高效率读写大数据
+#include<sys/mman.h>
+#include<sys/types.h>
+#include<fcntl.h>
+#include<string.h>
+#include<stdio.h>
+#include<unistd.h>
+#include <string>
+#include <iostream>
+ 
+using namespace std;
+ 
+/* 获取要写入文件的长度 */
+int getFileSize(const string &filename)
+{
+    int size = 0;
+    FILE *fp = NULL;
+ 
+    fp=fopen(filename.c_str(),"r");  
+    if( NULL == fp)
+    {
+        return size;
+    }  
+    fseek(fp,0L,SEEK_END);  
+    size = ftell(fp);  
+    fclose(fp);  
+      
+    return size;  
+}
+ 
+void mmapSaveDataIntoFiles(const string &filename,const string &data)
+{
+    int fileLength = 0;
+    int dataLength = 0;
+    int offset = 0;
+    string nextLine = "\n";
+ 
+    /* 获取文件大小和数据长度 */
+    fileLength = getFileSize(filename);
+    dataLength = data.length() + 1;
+    offset = fileLength + dataLength;
+ 
+    int fd = open(filename.c_str(),O_CREAT |O_RDWR|O_APPEND,00777);
+    if(fd < 0)
+    {
+        cout<<"OPEN FILE ERROR!"<<endl;
+    }
+    /* 增大文件大小，以用于映射 */
+    lseek(fd,0,SEEK_END);
+    write(fd,"\0",dataLength);
+    /* 建立映射 */
+    char *buffer = (char*)mmap(NULL,offset,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+    close(fd);
+ 
+    /* 清零该段内存，防止乱码 */
+    memset(buffer + offset,0,dataLength);
+    /* 写入数据 */
+    memcpy(buffer + fileLength,data.c_str(),dataLength - 1);
+    /* 增加换行符 */
+    memcpy(buffer + offset - 1,nextLine.c_str(),nextLine.length());
+    
+    munmap(buffer,offset);
+}
+ 
+int main()
+{
+    string data = "123456789";
+    int i = 0;
+    while(i < 1000)
+    {
+        mmapSaveDataIntoFiles("data",data);
+        i++;
+    }
+ 
+    return 0;
+}
+ 
+ 
+ 
+ 
+ 利用mmap /dev/mem 读写Linux内存
+ 使用 hexedit /dev/mem 可以显示所有物理内存中的信息。 运用mmap将/dev/mem map出来，然后直接对其读写可以实现用户空间的内核操作。
+
+ 我的测试机器是64位机。 该例子将物理地址0x20000映射到了虚拟地址0x7f3f95391000。
+首先将当前地址下的内容输出， 然后写入新值。 
+可以通过 hexedit /dev/mem 验证新值已经写入。
+如果想在用户态处理kernel分配的地址可以这么做。 首先用virt_addr = get_free_pages(GFP_KERNEL, order)分配内存，通过phy_addr = __pa(virt_addr)得到物理地址，然后在用户态将/dev/mem用mmap 映射出来， offset就是phy_addr, length设为 2^order。 此时就可以在用户态读写内核分配的内存了。
+
+注：该操作需要有root权限。
+
+Linux的进程间通信：共享内存(转)https://www.jianshu.com/p/6bbf5d474f89

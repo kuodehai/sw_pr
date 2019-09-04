@@ -12,3 +12,6 @@ Same with other languages
 https://wiki.ubuntu.org.cn/
 
 https://git.openwrt.org/
+
+值得推荐的C/C++框架和库 (真的很强大)
+https://blog.csdn.net/xiaoxiaoyeyaya/article/details/42541419

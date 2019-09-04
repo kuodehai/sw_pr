@@ -1,0 +1,29 @@
+
+语音识别的评价指标主要是Word Error Rate（WER）。
+
+错误的情况包括三种：
+
+1.Substitutions：错词。
+
+2.Deletions：漏词。
+
+3.Insertions：多词。
+
+
+一个语音的频谱图。峰值就表示语音的主要频率成分，我们把这些峰值称为共振峰（formants），而共振峰就是携带了声音的辨识属性（就是个人身份证一样）。所以它特别重要。用它就可以识别不同的声音。
+
+
+语音识别概述
+https://blog.csdn.net/antkillerfarm/article/details/81624323
+
+语音识别—基本框架, Microphone Array, 声源定位 
+https://blog.csdn.net/antkillerfarm/article/details/81865981
+
+Praat
+Praat是一款跨平台的多功能语音学专业软件，由University of Amsterdam的Paul Boersma和David Weenink开发。主要用于对数字化的语音信号进行分析、标注、处理及合成等实验，同时生成各种语图和文字报表。
+
+官网：
+http://www.fon.hum.uva.nl/praat/
+
+
+
