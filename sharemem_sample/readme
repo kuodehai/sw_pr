@@ -238,7 +238,7 @@ void mmapSaveDataIntoFiles(const string &filename,const string &data)
         cout<<"OPEN FILE ERROR!"<<endl;
     }
     /* 增大文件大小，以用于映射 */
-    lseek(fd,0,SEEK_END);
+    lseek(fd, dataLength, SEEK_SET);
     write(fd,"\0",dataLength);
     /* 建立映射 */
     char *buffer = (char*)mmap(NULL,offset,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);

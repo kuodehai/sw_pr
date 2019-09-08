@@ -1,0 +1,4 @@
+/work/sdk-folder/testGitPro.bak/sharemem_sample/src/build/CMakeFiles/rebuild_cache.dir
+/work/sdk-folder/testGitPro.bak/sharemem_sample/src/build/CMakeFiles/edit_cache.dir
+/work/sdk-folder/testGitPro.bak/sharemem_sample/src/build/CMakeFiles/UnitTestShareMem_MMap_Read.dir
+/work/sdk-folder/testGitPro.bak/sharemem_sample/src/build/CMakeFiles/UnitTestShareMem_MMap_Write.dir

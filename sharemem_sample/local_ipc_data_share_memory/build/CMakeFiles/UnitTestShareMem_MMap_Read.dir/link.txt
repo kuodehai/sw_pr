@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/UnitTestShareMem_MMap_Read.dir/local_ipc_data_share_memory.o CMakeFiles/UnitTestShareMem_MMap_Read.dir/UnitTestShareMem_MMap_Read.o  -o UnitTestShareMem_MMap_Read 

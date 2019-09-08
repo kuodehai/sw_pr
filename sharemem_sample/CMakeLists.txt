@@ -20,3 +20,13 @@ message(${SRC_LIST})
 
 #告诉工程生成一个可执行文件
 add_executable(hello ${SRC_LIST})
+
+
+#告诉工程生成一个可执行文件
+add_executable(hello ${SRC_LIST})
+
+
+add_executable(UnitTestShareMem_MMap_Read  sharemem_mmap.c UnitTestShareMem_MMap_Read.c)
+
+add_executable(UnitTestShareMem_MMap_Write sharemem_mmap.c  UnitTestShareMem_MMap_Write.c)
+

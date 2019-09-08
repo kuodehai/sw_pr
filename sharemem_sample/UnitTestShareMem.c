@@ -2,145 +2,460 @@
  * @author wangdaopo
  * @email 3168270295@qq.com
  */
-#include <sys/mman.h>
-#include <sys/types.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include<stdio.h>
-#include<string.h>
+#include <sys/time.h>
+
 #define MAX_BLOCK_COUNT 200
-#define MAX_DATA_BLOCK_SIZE 100
-#define  BUG  1
+#define MAX_DATA_BLOCK_SIZE 5
+#define MIN_PAYLOAD_COUNT 1
+
+typedef enum {
+    WDP_LOG_RUN_ALL =   0x1 << 0, //1
+    WDP_LOG_RUN_TRACE = 0x1 << 1, //2
+    WDP_LOG_RUN_DEBUG = 0x1 << 2, //4
+    WDP_LOG_RUN_INFO =  0x1 << 3, //8
+    WDP_LOG_RUN_WARN =  0x1 << 4, //16
+    WDP_LOG_RUN_ERROR = 0x1 << 5, //32
+    WDP_LOG_RUN_EFATAL= 0x1 << 6, //64
+    WDP_LOG_RUN_OFF =   0x1 << 7 //128
+} WDP_LOG_RUN_LEVEL_E;
+
+static int g_current_wdp_log_level = WDP_LOG_RUN_TRACE | WDP_LOG_RUN_DEBUG | WDP_LOG_RUN_INFO |  WDP_LOG_RUN_WARN | WDP_LOG_RUN_ERROR | WDP_LOG_RUN_EFATAL ;
+
+#define WDP_LOG_RUN(current_log_level,format,...)  do{\
+    if(g_current_wdp_log_level & current_log_level ){\
+        printf("log level %d: [%d-%s]  " format "\n\r",  current_log_level,__LINE__ , __FUNCTION__,   ##__VA_ARGS__);\
+      }\
+    }while(0)
+
+
 typedef struct {
-    int  data_len;
-    char data[MAX_DATA_BLOCK_SIZE];
-} user_data_t;
+
+    unsigned long max_data_size;  //jiter总长度
+    unsigned int attribute_buffer_size; //预留保存的所有载荷头信息
+    unsigned int per_payload_buffer_size;//每个载荷数据长度
+
+    //对于JB来说，需要知道当前的运行状态以及一些统计信息等。如果这些信息正常，就说明问题很大可能不是由JB引起的，不正常则说明有很大的可能性。
+    unsigned short jiter_status; // JB当前运行状态：prefetching / processing
+    unsigned short jiter_cached_paload_count; // JB里有多少个缓存的包
+    unsigned short jiter_get_offset;          //从JB中取帧的head的位置
+    unsigned short jiter_capacity;            //缓冲区的capacity
+
+    unsigned short net_lost_package_count; //网络丢包的个数
+    unsigned short late_arrival_discard_package_count; //由于来的太迟而被主动丢弃的包的个数
+
+    unsigned short
+    discard_exists_package_count; //由于JB里已有这个包而被主动丢弃的包的个数
+    unsigned short
+    jiter_enter_prefetching_state_count; //进prefetching状态的次数（除了第一次）
+    //
+
+    unsigned short media_type; // key 媒体类型
+    unsigned short last_got_senq; //：设上一个已经取出的包的sequence number为 last_got_senq
+
+    unsigned long last_got_timestamp;//设上一个已经取出的包的timestamp 为 last_got_timestamp
+
+    unsigned short last_put_position; //设上一个已放好的包的position为 last_put_position
+    unsigned short last_put_senq; //设上一个已放好的包的sequence number为 last_put_senq
+    unsigned long last_put_timestamp; //设上一个已放好的包的timestamp 为 last_put_timestamp
+
+} jiter_buffer_head_t;
 
 
-int init_mmap(const char * name_file,user_data_t **p_map)
-{
-    int	pagesize = sysconf(_SC_PAGESIZE);
-    int max_data_size = sizeof(user_data_t)*MAX_BLOCK_COUNT;
-    int page_count = max_data_size / pagesize ;
-    page_count =  max_data_size % pagesize > 0 ? (page_count+1) : page_count;
-    printf("max_data_size:%d pagesize is %d  page_count:%d \n",max_data_size,pagesize,page_count);
-    int fd =open(name_file,O_CREAT|O_RDWR|O_TRUNC,00777);
-    lseek(fd,pagesize*page_count-1,SEEK_SET);
-    write(fd,"",pagesize*page_count);
-    *p_map = (user_data_t*) mmap( NULL,sizeof(user_data_t)*MAX_BLOCK_COUNT,PROT_READ|PROT_WRITE,
-                                  MAP_SHARED,fd,0 );//此处offset = 0编译成版本1；offset = pdata_lensize编译成版本2  //注意：文件被映射部分而不是整个文件决定了进程能够访问的空间大小，另外，如果指定文件的偏移部分，一定要注意为页面大小的整数倍。下面是对进程映射地址空间的访问范例：
-    close( fd );
-    return fd;
-}
+typedef struct {
+    unsigned short media_type;
+    unsigned short current_sequence;
 
-int  destory_mmap( user_data_t *p_map)
-{
-    munmap( p_map, sizeof(user_data_t)*MAX_BLOCK_COUNT );
-    return 0;
-}
+    unsigned int current_timestamp;
+    unsigned int ssrc;
+    unsigned int payload_size;
+    unsigned char *payload_buffer;
+} ATTRIBUTE_BUFFER_BLOCK_T;
 
-int   write_mmap(user_data_t *p_map, const char* in_data_buff,const int in_data_len)
-{
-    static int write_offset = 0;
-    if(p_map == NULL || in_data_buff == NULL)
+typedef struct {
+    unsigned char data[MAX_DATA_BLOCK_SIZE];
+} PAYLOAD_BUFFER_BLOCK_T;
+
+typedef enum {
+    MEDIA_TYPE_OPUS = 1,
+    MEDIA_TYPE_G711,
+    MEDIA_TYPE_G722
+} MEDIA_TYPE_E;
+
+typedef enum {
+    JITER_STATUS_PREFETCHING = 1, //预存取   初始化时把状态置成prefetching.
+    //当在JB中的语音包个数达到指定的值时便把状态切到processing
+    JITER_STATUS_PROCESSINIG //处理中  只有在processing时才能从JB中取到语音帧.
+    //如果从JB里取不到语音帧了，它将又回到prefetching
+} JITER_STATUS_E;
+
+static unsigned int get_packet_time(const unsigned short media_type) {
+    unsigned int packet_time = 0;
+    switch (media_type) // packet_time opus:10ms  g711/g722 20ms
     {
-        printf( "p_map:%p  in_data_buff:%p retun -1\n",p_map,in_data_buff);
+    case MEDIA_TYPE_OPUS:
+        packet_time = 10;
+        break;
+
+    default:
+        break;
+    }
+    return packet_time;
+}
+
+unsigned long gettimeofdayUsec(void)
+{
+    struct timeval stamp;
+    gettimeofday(&stamp, NULL);
+    // printf("tv_sec  : %ld  \n",stamp.tv_sec);
+    //  printf("tv_usec : %ld \n",stamp.tv_usec);
+    return (stamp.tv_sec*1000000 + stamp.tv_usec);
+}
+
+
+static int resetJiter(unsigned char *p_mmap, const unsigned short media_type) {
+
+    jiter_buffer_head_t *pjiter_buffer_head = (jiter_buffer_head_t *)p_mmap;
+    if (p_mmap == NULL || pjiter_buffer_head == NULL) {
+        WDP_LOG_RUN(WDP_LOG_RUN_WARN,"p_mmap:%p  pjiter_buffer_head:%p retun -1\n", p_mmap,
+                    pjiter_buffer_head);
         return -1;
     }
 
-    int count = in_data_len/MAX_DATA_BLOCK_SIZE;
-    int remain_data_len = in_data_len %  MAX_DATA_BLOCK_SIZE;
+    unsigned int packet_time = get_packet_time(media_type);
+    unsigned int capacity = 256 * 10 / packet_time;
+    unsigned int attribute_buffer_size =
+        sizeof(ATTRIBUTE_BUFFER_BLOCK_T) * capacity;
+    unsigned int per_payload_buffer_block_count = packet_time / 10;
+    unsigned int per_payload_buffer_size =
+        sizeof(PAYLOAD_BUFFER_BLOCK_T) *
+        per_payload_buffer_block_count; // attribute_buffer_block.payload_size
+    unsigned int payload_buffer_size = per_payload_buffer_size * capacity;
 
-    int  data_max_clock_count = count + ( remain_data_len > 0 ? 1:0 );
-#if BUG
-    printf( "write_offset:%d   in_data_len %d data_max_clock_count:%d\n",write_offset,in_data_len,data_max_clock_count );
-#endif
-    if( data_max_clock_count   >  MAX_BLOCK_COUNT)
-    {
-        printf( "data_max_clock_count:%d >  MAX_BLOCK_COUNT:%d retun -1\n",data_max_clock_count,MAX_BLOCK_COUNT);
-        return -1;
-    }
-    for(int i=0; i<count ; i++)
-    {
-#if BUG
-        printf( "write_offset:%d  data_len %d;\n",write_offset, MAX_DATA_BLOCK_SIZE );
-#endif
-        memcpy( ( *(p_map+write_offset) ).data, in_data_buff + i * MAX_DATA_BLOCK_SIZE, MAX_DATA_BLOCK_SIZE );
-        ( *(p_map+write_offset) ).data_len = MAX_DATA_BLOCK_SIZE;
-        write_offset++;
-        write_offset = write_offset % MAX_BLOCK_COUNT;
-    }
-    if(remain_data_len)
-    {
-#if BUG
-        printf( "write_offset:%d  data_len %d;\n",write_offset, remain_data_len);
-#endif
-        memcpy( ( *(p_map+write_offset) ).data, in_data_buff + count * MAX_DATA_BLOCK_SIZE, remain_data_len );
-        ( *(p_map+write_offset) ).data_len = remain_data_len;
-        write_offset++;
-        write_offset = write_offset % MAX_BLOCK_COUNT;
-    }
+    unsigned int max_data_size =
+        sizeof(jiter_buffer_head_t) + attribute_buffer_size + payload_buffer_size;
 
+    memset(p_mmap, 0, max_data_size);
+    pjiter_buffer_head->media_type = media_type;
+    pjiter_buffer_head->jiter_status = JITER_STATUS_PREFETCHING;
+    pjiter_buffer_head->jiter_capacity = capacity;
+
+    pjiter_buffer_head->max_data_size = max_data_size;
+    pjiter_buffer_head->attribute_buffer_size = attribute_buffer_size;
+    pjiter_buffer_head->per_payload_buffer_size = per_payload_buffer_size;
     return 0;
 }
 
-int   read_mmap(const user_data_t *p_map, const int  read_data_len , char*read_data_buff)//char*out_data_buff, int* out_data_len
+int init_mmap(const char is_write, const unsigned short media_type,
+              const char *name_file, unsigned char **p_mmap) {
+
+    unsigned int packet_time = get_packet_time(media_type);
+    unsigned int capacity = 256 * 10 / packet_time;
+    unsigned int attribute_buffer_size =
+        sizeof(ATTRIBUTE_BUFFER_BLOCK_T) * capacity;
+    unsigned int per_payload_buffer_block_count = packet_time / 10;
+    unsigned int per_payload_buffer_size =
+        sizeof(PAYLOAD_BUFFER_BLOCK_T) *
+        per_payload_buffer_block_count; // attribute_buffer_block.payload_size
+    unsigned int payload_buffer_size = per_payload_buffer_size * capacity;
+
+    unsigned int max_data_size =
+        sizeof(jiter_buffer_head_t) + attribute_buffer_size + payload_buffer_size;
+
+    int pagesize = sysconf(_SC_PAGESIZE);
+    int page_count = max_data_size / pagesize;
+    page_count = max_data_size % pagesize > 0 ? (page_count + 1) : page_count;
+    WDP_LOG_RUN(WDP_LOG_RUN_INFO,"max_data_size:%d  capacity:%d pagesize is %d  page_count:%d", max_data_size, capacity,
+                pagesize, page_count);
+    int fd = -1;
+    if (is_write) {
+        fd = open(name_file, O_CREAT | O_RDWR | O_TRUNC, 00777);
+    } else {
+        fd = open(name_file, O_CREAT | O_RDWR, 00777);
+    }
+
+    struct stat sb;
+    /* 获取文件的属性 */
+    if ((fstat(fd, &sb)) == -1) {
+        perror("fstat");
+    }
+    WDP_LOG_RUN(WDP_LOG_RUN_INFO,"st_size:%ld",sb.st_size);
+    if (sb.st_size == 0) {
+        lseek(fd, pagesize * page_count - 1, SEEK_SET);
+        write(fd, "\0", pagesize * page_count);
+    }
+
+    *p_mmap = (unsigned char *)mmap(
+                  NULL, max_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                  0); //此处offset = 0编译成版本1；offset = pdata_lensize编译成版本2
+    ////注意：文件被映射部分而不是整个文件决定了进程能够访问的空间大小，另外，如果指定文件的偏移部分，一定要注意为页面大小的整数倍。下面是对进程映射地址空间的访问范例：
+
+    if (*p_mmap == MAP_FAILED || *p_mmap == NULL) {
+        perror("MAP failed");
+        close(fd);
+        return -1;
+    }
+
+    if (sb.st_size == 0) {
+
+        struct stat sb;
+        /* 获取文件的属性 */
+        if ((fstat(fd, &sb)) == -1) {
+            perror("fstat");
+        }
+
+        memset(*p_mmap, 0, max_data_size);
+        jiter_buffer_head_t *pjiter_buffer_head = (jiter_buffer_head_t *)(*p_mmap);
+        // memset(pjiter_buffer_head,0,sizeof(jiter_buffer_head_t));
+        pjiter_buffer_head->media_type = media_type;
+        pjiter_buffer_head->jiter_status = JITER_STATUS_PREFETCHING;
+        pjiter_buffer_head->jiter_capacity = capacity;
+        pjiter_buffer_head->max_data_size = max_data_size;
+        pjiter_buffer_head->attribute_buffer_size = attribute_buffer_size;
+        pjiter_buffer_head->per_payload_buffer_size = per_payload_buffer_size;
+
+        WDP_LOG_RUN(WDP_LOG_RUN_INFO,"st_size:%ld media_type:%d jiter_status:%d  jiter_capacity:%d attribute_buffer_size:%d  per_payload_buffer_size:%d",
+                    sb.st_size,
+                    pjiter_buffer_head->media_type, pjiter_buffer_head->jiter_status,   pjiter_buffer_head->jiter_capacity ,
+                    pjiter_buffer_head->attribute_buffer_size, pjiter_buffer_head->per_payload_buffer_size);
+    }
+    close(fd);
+    return 0;
+}
+
+int destory_mmap(unsigned char *p_mmap) {
+    jiter_buffer_head_t *pjiter_buffer_head = (jiter_buffer_head_t *)p_mmap;
+    if (p_mmap == NULL || pjiter_buffer_head == NULL) {
+        WDP_LOG_RUN(WDP_LOG_RUN_WARN,"p_mmap:%p  pjiter_buffer_head:%p retun -1\n", p_mmap,
+                    pjiter_buffer_head);
+        return -1;
+    }
+    munmap(p_mmap, pjiter_buffer_head->max_data_size);
+    return 0;
+}
+
+int write_mmap(unsigned char *p_mmap,
+               const ATTRIBUTE_BUFFER_BLOCK_T attribute_buffer_block_t) {
+
+    if (p_mmap == NULL || attribute_buffer_block_t.payload_buffer == NULL) {
+        WDP_LOG_RUN(WDP_LOG_RUN_WARN,"p_mmap:%p  attribute_buffer_block_t.payload_buffer:%p retun -1\n",
+                    p_mmap, attribute_buffer_block_t.payload_buffer);
+        return -1;
+    }
+
+    jiter_buffer_head_t *pjiter_buffer_head = (jiter_buffer_head_t *)p_mmap;
+
+    //在以下情况下需要reset JB，让JB在初始状态下开始运行。
+    if (attribute_buffer_block_t.media_type != pjiter_buffer_head->media_type) {
+        //当收到的语音包的媒体类型（G711/G722/G729，不包括SID/RFC2833等）变了，就认为来了新的stream，需要reset
+        // JB。
+        resetJiter(p_mmap,
+                   attribute_buffer_block_t.media_type); // note: sync  read_mmap
+    }
+    //当收到的语音包的SSRC变了，就认为来了新的stream，需要reset JB。
+    //当收到的语音包的packet time变了，就认为来了新的stream，需要reset JB。
+
+    unsigned short delta_senq = 0;
+    // delta_senq可以根据下面的逻辑关系得到。
+    if (attribute_buffer_block_t.current_sequence >=
+            pjiter_buffer_head->last_got_senq) {
+        if (attribute_buffer_block_t.current_timestamp >=
+                pjiter_buffer_head->last_got_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence -
+                         pjiter_buffer_head->last_got_senq;
+        } else if (attribute_buffer_block_t.current_timestamp <
+                   pjiter_buffer_head->last_got_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence - 65536 -
+                         pjiter_buffer_head->last_got_senq;
+        }
+    } else if (attribute_buffer_block_t.current_sequence <
+               pjiter_buffer_head->last_got_senq) {
+        if (attribute_buffer_block_t.current_timestamp >=
+                pjiter_buffer_head->last_got_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence + 65536 -
+                         pjiter_buffer_head->last_got_senq;
+        } else if (attribute_buffer_block_t.current_timestamp <
+                   pjiter_buffer_head->last_got_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence -
+                         pjiter_buffer_head->last_got_senq;
+        }
+    }
+    if (delta_senq <
+            1) //如果delta_senq小于1，就可以认为这个包来的太迟，就要主动丢弃掉。由于我们的buffer足够大（256个block），如果包早到了也会被放到对应的position上，不会把相应位置上的还没取走的覆盖掉。
+    {
+        pjiter_buffer_head->late_arrival_discard_package_count++;
+        WDP_LOG_RUN(WDP_LOG_RUN_INFO,"late arrival discard package current_sequence:%d  late_arrival_discard_package_count:%d retun -1\n",attribute_buffer_block_t.current_sequence, pjiter_buffer_head->late_arrival_discard_package_count);
+        return -1;
+    }
+
+    unsigned int cur_position = 0;
+    // cur_position 可以根据下面的逻辑关系得到。 接下来看怎么把包放到正确的位置上
+    // 它的位置（position，范围是0 ~ capacity-1）
+
+    if (attribute_buffer_block_t.current_sequence >=
+            pjiter_buffer_head->last_put_senq) {
+        if (attribute_buffer_block_t.current_timestamp >=
+                pjiter_buffer_head->last_put_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence -
+                         pjiter_buffer_head->last_put_senq;
+        } else if (attribute_buffer_block_t.current_timestamp <
+                   pjiter_buffer_head->last_put_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence - 65536 -
+                         pjiter_buffer_head->last_put_senq;
+        }
+    } else if (attribute_buffer_block_t.current_sequence <
+               pjiter_buffer_head->last_put_senq) {
+        if (attribute_buffer_block_t.current_timestamp >=
+                pjiter_buffer_head->last_put_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence + 65536 -
+                         pjiter_buffer_head->last_put_senq;
+        } else if (attribute_buffer_block_t.current_timestamp <
+                   pjiter_buffer_head->last_put_timestamp) {
+            delta_senq = attribute_buffer_block_t.current_sequence -
+                         pjiter_buffer_head->last_put_senq;
+        }
+    }
+
+    unsigned short last_put_position  = pjiter_buffer_head->last_put_position;
+    unsigned int jiter_capacity =  pjiter_buffer_head->jiter_capacity;
+    cur_position = last_put_position + delta_senq +jiter_capacity ;
+    if(cur_position >= jiter_capacity)
+        cur_position = cur_position - jiter_capacity ;
+    //得到了当前包的position后就可以把包头里的timestamp等放到相应的attribute
+    // buffer
+    // block里了，payload根据算好的占几个block放到相应的那几个block上（有可能填不满block，不过没关系，取payload时是根据index取的）。
+    ATTRIBUTE_BUFFER_BLOCK_T *pAttribute_buffer_block_t =
+        (ATTRIBUTE_BUFFER_BLOCK_T *)(p_mmap + sizeof(jiter_buffer_head_t) +
+                                     sizeof(ATTRIBUTE_BUFFER_BLOCK_T) *
+                                     cur_position);
+    if (pAttribute_buffer_block_t == NULL)
+    {
+        WDP_LOG_RUN(WDP_LOG_RUN_WARN,"pAttribute_buffer_block_t:%p retun -1\n",pAttribute_buffer_block_t);
+        return -1;
+    }
+
+    if (attribute_buffer_block_t.current_sequence ==
+            pAttribute_buffer_block_t->current_sequence) {
+        //如果放进对应block时发现里面已经有包了并且sequence
+        // number一样，说明这个包是重复包，就要把这个包主动丢弃掉。
+        pjiter_buffer_head->discard_exists_package_count++;
+        WDP_LOG_RUN(WDP_LOG_RUN_INFO,"discard_exists_package  current_sequence:%d  discard_exists_package_count:%d retun -1\n",attribute_buffer_block_t.current_sequence,pjiter_buffer_head->discard_exists_package_count);
+        return -1;
+    }
+
+    memcpy(pAttribute_buffer_block_t, &attribute_buffer_block_t,
+           sizeof(ATTRIBUTE_BUFFER_BLOCK_T));
+    memcpy(p_mmap + sizeof(jiter_buffer_head_t) +
+           pjiter_buffer_head->attribute_buffer_size +
+           pjiter_buffer_head->per_payload_buffer_size * cur_position,
+           attribute_buffer_block_t.payload_buffer,
+           attribute_buffer_block_t.payload_size);
+
+    pjiter_buffer_head->media_type = attribute_buffer_block_t.media_type;
+    pjiter_buffer_head->last_put_position = cur_position;
+    pjiter_buffer_head->last_put_senq = attribute_buffer_block_t.current_sequence;
+    pjiter_buffer_head->last_put_timestamp = attribute_buffer_block_t.current_timestamp;
+
+    pjiter_buffer_head->jiter_cached_paload_count++;
+    if (pjiter_buffer_head->jiter_cached_paload_count >=
+            MIN_PAYLOAD_COUNT) //当在JB中的语音包个数达到指定的值时便把状态切到
+        // JITER_STATUS_PROCESSINIG
+    {
+        pjiter_buffer_head->jiter_status = JITER_STATUS_PROCESSINIG;
+    }
+    WDP_LOG_RUN(WDP_LOG_RUN_DEBUG,"media_type:%d  last_put_position:%d last_put_senq:%d  last_put_timestamp:%ld  jiter_cached_paload_count:%d  jiter_status:%d",
+                pjiter_buffer_head->media_type,   pjiter_buffer_head->last_put_position, pjiter_buffer_head->last_put_senq,
+                pjiter_buffer_head->last_put_timestamp, pjiter_buffer_head->jiter_cached_paload_count, pjiter_buffer_head->jiter_status);
+    return 0;
+}
+
+int read_mmap(const unsigned char *p_mmap, int *read_data_len,
+              unsigned char *read_data_buff) {
+    //再来看GET操作。每次从JB里不是取一个包，而是取1帧（能编解码的最小单位，通常是10ms，也有例外，比如AMR-WB是20ms），
+    //这主要是因为播放loop是10ms一次（每次都是取一帧语音数据播放）。
+    //取时总是从head上取，开始时head为第一个放进JB的包的position，每取完一个包（几帧）后head就会向后移一个位置。
+    //如果到某个位置时它的block里没有包，就说明这个包丢了，这时取出的就是payload大小就是0，告诉后续的decoder要做PLC。不同类型的包取法不一样，
+    jiter_buffer_head_t *pjiter_buffer_head = (jiter_buffer_head_t *)p_mmap;
+    if (p_mmap == NULL || pjiter_buffer_head == NULL) {
+        WDP_LOG_RUN(WDP_LOG_RUN_WARN,"p_mmap:%p  pjiter_buffer_head:%p retun -1\n", p_mmap,
+                    pjiter_buffer_head);
+        return -1;
+    }
+
+    WDP_LOG_RUN(WDP_LOG_RUN_DEBUG,"jiter_status:%d jiter_cached_paload_count:%d jiter_get_offset:%d  jiter_capacity:%d  net_lost_package_count:%d  late_arrival_discard_package_count:%d discard_exists_package_count:%d  jiter_enter_prefetching_state_count:%d",
+                pjiter_buffer_head->jiter_status, pjiter_buffer_head->jiter_cached_paload_count,
+                pjiter_buffer_head->jiter_get_offset, pjiter_buffer_head->jiter_capacity,
+                pjiter_buffer_head->net_lost_package_count, pjiter_buffer_head->late_arrival_discard_package_count,
+                pjiter_buffer_head->discard_exists_package_count,pjiter_buffer_head->jiter_enter_prefetching_state_count);
+
+
+    if (pjiter_buffer_head->jiter_status == JITER_STATUS_PROCESSINIG)
+    {
+        // todo:
+        pjiter_buffer_head->jiter_get_offset =
+            pjiter_buffer_head->jiter_get_offset %
+            pjiter_buffer_head->jiter_capacity;
+        ATTRIBUTE_BUFFER_BLOCK_T *pAttribute_buffer_block_t =
+            (ATTRIBUTE_BUFFER_BLOCK_T *)(p_mmap + sizeof(jiter_buffer_head_t) +
+                                         sizeof(ATTRIBUTE_BUFFER_BLOCK_T) *
+                                         pjiter_buffer_head->jiter_get_offset);
+        if (pAttribute_buffer_block_t == NULL) {
+            WDP_LOG_RUN(WDP_LOG_RUN_WARN,"pAttribute_buffer_block_t:%p  retun -1\n", pAttribute_buffer_block_t);
+            return -1;
+        }
+        memcpy(read_data_buff, pAttribute_buffer_block_t->payload_buffer,
+               pAttribute_buffer_block_t->payload_size);
+        *read_data_len = pAttribute_buffer_block_t->payload_size;
+
+        WDP_LOG_RUN(WDP_LOG_RUN_TRACE,"current_sequence:%d  current_timestamp:%d read_data_len:%d read_data_buff:%s  ",
+                    pAttribute_buffer_block_t->current_sequence,  pAttribute_buffer_block_t->current_timestamp, *read_data_len,read_data_buff);
+        pjiter_buffer_head->last_got_senq =
+            pAttribute_buffer_block_t->current_sequence;
+        pjiter_buffer_head->last_got_timestamp =
+            pAttribute_buffer_block_t->current_timestamp;
+        pjiter_buffer_head->jiter_cached_paload_count--;
+        pjiter_buffer_head->jiter_get_offset++;
+        if (pjiter_buffer_head->jiter_cached_paload_count <
+                MIN_PAYLOAD_COUNT) //当在JB中的语音包个数未达到指定的值时便把状态切到
+            // JITER_STATUS_PREFETCHING
+        {
+            pjiter_buffer_head->jiter_status = JITER_STATUS_PREFETCHING;
+        }
+    }
+}
+
+int main(int argc, char **argv) // map a normal file as shared mem:
 {
-    static int read_offset = 0;
-    if(p_map == NULL || read_data_buff == NULL)
+    unsigned char *p_mmap;
+    init_mmap(1, MEDIA_TYPE_OPUS, "./test", &p_mmap);
+    int i=4;
+    for(int i=1;  i<4; i++)
     {
-        printf( "p_map:%p  read_data_buff:%p retun -1\n",p_map,read_data_buff);
-        return -1;
-    }
-    int count = read_data_len/MAX_DATA_BLOCK_SIZE;
-    int remain_data_len = read_data_len %  MAX_DATA_BLOCK_SIZE;
+        char in_data_buff[MAX_DATA_BLOCK_SIZE];
+        int in_data_len = MAX_DATA_BLOCK_SIZE;
+        memset(in_data_buff, 'a'+i, in_data_len);
 
-    int  data_max_clock_count = count + ( remain_data_len > 0 ? 1:0 ) ;
-#if BUG
-    printf( "read_offset:%d   read_data_len %d  data_max_clock_count:%d\n",read_offset,read_data_len, data_max_clock_count );
-#endif
-    if( data_max_clock_count >  MAX_BLOCK_COUNT)
-    {
-        printf( "data_max_clock_count:%d >  MAX_BLOCK_COUNT:%d retun -1\n",data_max_clock_count,MAX_BLOCK_COUNT);
-        return -1;
+        ATTRIBUTE_BUFFER_BLOCK_T attribute_buffer_block_t;
+        attribute_buffer_block_t.media_type = MEDIA_TYPE_OPUS;
+        attribute_buffer_block_t.current_sequence = i;
+        attribute_buffer_block_t.current_timestamp = gettimeofdayUsec();
+        attribute_buffer_block_t.ssrc = 0;
+        attribute_buffer_block_t.payload_size = in_data_len;
+        attribute_buffer_block_t.payload_buffer = in_data_buff;
+        write_mmap(p_mmap, attribute_buffer_block_t);
+
     }
-    for(int i=0; i<count ; i++)
-    {
-#if BUG
-        printf( "read_offset:%d data: %s data_len %d;\n",read_offset,(*(p_map+read_offset)).data, (*(p_map+read_offset)).data_len );
-#endif
-        int data_len = (*(p_map+read_offset)).data_len;
-        memcpy(read_data_buff + i*MAX_DATA_BLOCK_SIZE ,(*(p_map+read_offset)).data, data_len);
-        read_offset++;
-        read_offset = read_offset % MAX_BLOCK_COUNT;
-    }
-    if(remain_data_len)
-    {
-#if BUG
-        printf( "read_offset:%d data: %s data_len %d;\n",read_offset,(*(p_map+read_offset)).data, (*(p_map+read_offset)).data_len );
-#endif
-        memcpy(read_data_buff + count*MAX_DATA_BLOCK_SIZE,(*(p_map+read_offset)).data, remain_data_len);
-        read_offset++;
-        read_offset = read_offset % MAX_BLOCK_COUNT;
-    }
+
+    int read_data_len = MAX_DATA_BLOCK_SIZE;
+    char read_data_buff[MAX_DATA_BLOCK_SIZE];
+    read_mmap(p_mmap, &read_data_len, read_data_buff);
+
+    destory_mmap(p_mmap);
     return 0;
 }
-
-int main(int argc, char** argv)  // map a normal file as shared mem:
-{
-    user_data_t *p_map;
-    init_mmap("./test",&p_map);
-
-    char in_data_buff[MAX_DATA_BLOCK_SIZE*68+42];
-    int in_data_len = MAX_DATA_BLOCK_SIZE*68+42 ;
-    memset(in_data_buff,'a',in_data_len);
-    write_mmap(p_map,in_data_buff,in_data_len);
-
-    int read_data_len = MAX_DATA_BLOCK_SIZE*68+42;
-    char read_data_buff[MAX_DATA_BLOCK_SIZE*68+42];
-    read_mmap(p_map,read_data_len,read_data_buff);
-
-    destory_mmap(p_map);
-    return 0;
-}
-

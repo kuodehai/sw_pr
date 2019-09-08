@@ -6,7 +6,7 @@
  C语言字符串操作总结超精细快收藏
 https://baijiahao.baidu.com/s?id=1594930486715512180&wfr=spider&for=pc
 
-
+https://blog.csdn.net/qq_15821725/article/details/78929344  C/C++文件读写操作——FILE*、fstream
 
 //////c语言的split字符串分割函数strtok的使用////////////
 
